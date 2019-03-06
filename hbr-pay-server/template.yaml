@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+    hbr-pay-server
+
+    SAM Template for hbr-pay-server
+    
+Globals:
+    Function:
+        Timeout: 3
+        Runtime: nodejs8.10
+    Api:
+        Cors:
+            AllowMethods: "'*'"
+            AllowHeaders: "'*'"
+            AllowOrigin: "'*'"
+Parameters: 
+    MerchantId: 
+        Type: String
+        Default: <<braintree merchang ID>>
+        Description: Braintree sandbox merchant ID
+    PublicKey: 
+        Type: String
+        Default: <<brantree public key>>
+        Description: Braintree sandbox public key
+    PrivateKey: 
+        Type: String
+        Default: <<brantree private key>>
+        Description: Braintree sandbox private key
+Resources:
+
+    PaymentFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            CodeUri: payment/
+            Handler: app.lambdaHandler
+            Environment:
+                Variables:
+                    BT_MERCHANTID: !Ref MerchantId
+                    BT_PUBLICKEY: !Ref PublicKey
+                    BT_PRIVATEKEY: !Ref PrivateKey
+            Events:
+                Payment:
+                    Type: Api 
+                    Properties:
+                        Path: /pay
+                        Method: any
+
+Outputs:
+    PaymentApi:
+      Description: "API Gateway endpoint URL for Prod stage for Payment function"
+      Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/pay/"
+
+    PaymentFunction:
+      Description: "Payment Lambda Function ARN"
+      Value: !GetAtt PaymentFunction.Arn
+
+    PaymentFunctionIamRole:
+      Description: "Implicit IAM Role created for Payment function"
+      Value: !GetAtt PaymentFunctionRole.Arn

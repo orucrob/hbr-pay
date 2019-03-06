@@ -1,0 +1,21 @@
+{
+  "name": "hbr-pay-app",
+  "version": "1.0.0",
+  "description": "My doozie Nuxt.js project",
+  "author": "Robert Hikl",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt",
+    "build": "nuxt build",
+    "start": "nuxt start",
+    "generate": "nuxt generate"
+  },
+  "dependencies": {
+    "braintree-web-drop-in": "^1.16.0",
+    "cross-env": "^5.2.0",
+    "nuxt": "^2.4.0"
+  },
+  "devDependencies": {
+    "nodemon": "^1.18.9"
+  }
+}
