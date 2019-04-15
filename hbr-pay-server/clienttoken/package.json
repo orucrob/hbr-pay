@@ -1,0 +1,9 @@
+{
+    "name": "clienttoken",
+    "version": "1.0.0",
+    "main": "app.js",
+    "license": "MIT",
+    "dependencies": {
+        "braintree": "^2.15.0"
+    }
+}

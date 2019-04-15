@@ -1,0 +1,14 @@
+{
+    "name": "paydb-layer",
+    "version": "1.0.0",
+    "main": "index.js",
+    "dependencies": {},
+    "scripts": {
+        "test": "mocha tests/unit/"
+    },
+    "devDependencies": {
+        "aws-sdk": "^2.437.0",
+        "chai": "^4.1.2",
+        "mocha": "^5.1.1"
+    }
+}

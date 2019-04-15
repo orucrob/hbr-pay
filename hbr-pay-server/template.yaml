@@ -4,31 +4,128 @@ Description: >
     hbr-pay-server
 
     SAM Template for hbr-pay-server
-    
+
 Globals:
     Function:
-        Timeout: 3
+        Timeout: 10
         Runtime: nodejs8.10
     Api:
-        Cors:
-            AllowMethods: "'*'"
-            AllowHeaders: "'*'"
-            AllowOrigin: "'*'"
-Parameters: 
-    MerchantId: 
-        Type: String
-        Default: <<braintree merchang ID>>
-        Description: Braintree sandbox merchant ID
-    PublicKey: 
-        Type: String
-        Default: <<brantree public key>>
-        Description: Braintree sandbox public key
-    PrivateKey: 
-        Type: String
-        Default: <<brantree private key>>
-        Description: Braintree sandbox private key
-Resources:
+        Cors: "'*'"
 
+Parameters:
+    MerchantId:
+        Type: String
+        Default: 4889m6rnxpqmkgjv
+        Description: Braintree sandbox merchant ID
+    PublicKey:
+        Type: String
+        Default: aa
+        Description: Braintree sandbox public key
+    PrivateKey:
+        Type: String
+        Default: aa
+        Description: Braintree sandbox private key
+    Env:
+        Description: 'ID for environment (stage)'
+        Type: String
+        Default: 'dev'
+
+Resources:
+    #API definition
+    PayApi:
+        Type: AWS::Serverless::Api
+        Properties:
+            StageName: !Ref Env
+            Cors:
+                AllowHeaders: "'*'"
+            Auth:
+                #DefaultAuthorizer: PayCognitoAuthorizer
+                #TODO - do not enable default authorizer with cors until (https://github.com/awslabs/serverless-application-model/issues/717)
+                Authorizers:
+                    PayCognitoAuthorizer:
+                        UserPoolArn: ''
+
+    #ROLE - general role for most of the lamdas
+    PayLambdaGeneralRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub ${AWS::StackName}-general-lambda-iam-role
+            AssumeRolePolicyDocument:
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service: lambda.amazonaws.com
+                      Action: sts:AssumeRole
+            Path: /
+            ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+                - arn:aws:iam::aws:policy/AmazonKinesisReadOnlyAccess #TODO make it more specific
+            Policies:
+                - PolicyName: !Sub ${AWS::StackName}-general-lamnda-iam-policy
+                  PolicyDocument:
+                      Statement:
+                          - Effect: Allow
+                            Action:
+                                - 'ssm:GetParameters'
+                            Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*'
+                          - Effect: Allow
+                            Action:
+                                - dynamodb:*
+                            Resource:
+                                - !GetAtt 'TransactionTable.Arn'
+                                - !GetAtt 'CustomerTable.Arn'
+
+    #FN - ClientToken
+    ClientTokenFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            CodeUri: clienttoken/
+            Handler: app.lambdaHandler
+            Role: !GetAtt PayLambdaGeneralRole.Arn
+            Layers:
+                - !Ref PayApiLayer
+            Environment:
+                Variables:
+                    TRANSACTION_TABLE: !Ref TransactionTable
+                    CUSTOMER_TABLE: !Ref CustomerTable
+                    BT_MERCHANTID: !Ref MerchantId
+                    BT_PUBLICKEY: !Ref PublicKey
+                    BT_PRIVATEKEY: !Ref PrivateKey
+            Events:
+                ClientToken:
+                    Type: Api
+                    Properties:
+                        RestApiId: !Ref PayApi
+                        Path: /pay/clienttoken
+                        Method: get
+                        Auth:
+                            Authorizer: PayCognitoAuthorizer
+    #FN - sale
+    SaleFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            CodeUri: sale/
+            Handler: app.lambdaHandler
+            Role: !GetAtt PayLambdaGeneralRole.Arn
+            Layers:
+                - !Ref PayApiLayer
+            Environment:
+                Variables:
+                    TRANSACTION_TABLE: !Ref TransactionTable
+                    CUSTOMER_TABLE: !Ref CustomerTable
+                    BT_MERCHANTID: !Ref MerchantId
+                    BT_PUBLICKEY: !Ref PublicKey
+                    BT_PRIVATEKEY: !Ref PrivateKey
+            Events:
+                Sale:
+                    Type: Api
+                    Properties:
+                        RestApiId: !Ref PayApi
+                        Path: /pay/sale
+                        Method: post
+                        Auth:
+                            Authorizer: PayCognitoAuthorizer
+    #FN
     PaymentFunction:
         Type: AWS::Serverless::Function
         Properties:
@@ -39,22 +136,57 @@ Resources:
                     BT_MERCHANTID: !Ref MerchantId
                     BT_PUBLICKEY: !Ref PublicKey
                     BT_PRIVATEKEY: !Ref PrivateKey
+            Role: !GetAtt PayLambdaGeneralRole.Arn
             Events:
                 Payment:
-                    Type: Api 
+                    Type: Api
                     Properties:
+                        RestApiId: !Ref PayApi
                         Path: /pay
                         Method: any
+    #LAYER
+    PayApiLayer:
+        Type: AWS::Serverless::LayerVersion
+        Properties:
+            LayerName: pay-api-layer
+            Description: Common Pay Api Layer
+            ContentUri: _common/
+            CompatibleRuntimes:
+                - nodejs8.10
+            RetentionPolicy: Delete
 
-Outputs:
-    PaymentApi:
-      Description: "API Gateway endpoint URL for Prod stage for Payment function"
-      Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/pay/"
-
-    PaymentFunction:
-      Description: "Payment Lambda Function ARN"
-      Value: !GetAtt PaymentFunction.Arn
-
-    PaymentFunctionIamRole:
-      Description: "Implicit IAM Role created for Payment function"
-      Value: !GetAtt PaymentFunctionRole.Arn
+    #Customer Table
+    CustomerTable:
+        Type: AWS::DynamoDB::Table
+        #DeletionPolicy: Retain
+        Properties:
+            AttributeDefinitions:
+                - AttributeName: 'userId'
+                  AttributeType: 'S'
+            KeySchema:
+                - AttributeName: 'userId'
+                  KeyType: 'HASH'
+            TableName: !Sub '${Env}-Customers-${AWS::StackName}'
+            BillingMode: PAY_PER_REQUEST
+    #Transaction Table
+    TransactionTable:
+        Type: AWS::DynamoDB::Table
+        #DeletionPolicy: Retain
+        Properties:
+            AttributeDefinitions:
+                - AttributeName: 'transactionId'
+                  AttributeType: 'S'
+                - AttributeName: 'userId'
+                  AttributeType: 'S'
+            KeySchema:
+                - AttributeName: 'transactionId'
+                  KeyType: 'HASH'
+            TableName: !Sub '${Env}-Transactions-${AWS::StackName}'
+            BillingMode: PAY_PER_REQUEST
+            GlobalSecondaryIndexes:
+                - IndexName: 'userGSI'
+                  KeySchema:
+                      - AttributeName: 'userId'
+                        KeyType: 'HASH'
+                  Projection:
+                      ProjectionType: 'ALL'
